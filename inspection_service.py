@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from models import Inspection
 from scheduling import get_next_scheduled_date
 
+# This function deletes the record from the database
 def delete_inspection(
         session: Session,
         inspection: Inspection
@@ -12,6 +13,7 @@ def delete_inspection(
     session.delete(inspection)
     session.commit()
 
+# This function updates the database record.
 # Updating Inspections
 def update_inspection(
     session: Session,
@@ -44,6 +46,7 @@ def update_inspection(
 
     return inspection
 
+# Creates a new record and pushes it to the database
 # Creating Inspections
 def create_inspection(
         session: Session,
