@@ -1,122 +1,45 @@
-from nicegui import ui
-
-from ui.inspection_dialog import show_inspection_details
-
-ui.add_css("""
-    .inspection-table thead th {
-        border-right: 1px solid #d1d5db;
-        font-weight: 600;
-    }
-
-    .inspection-table thead th:last-child {
-        border-right: none;
-    }
-
-    .inspection-table tbody td {
-        border-right: 1px solid #e5e7eb;
-    }
-
-    .inspection-table tbody td:last-child {
-        border-right: none;
-    }
-""")
-
-def show_inspection_table(inspections):
-
-    ui.label(
-        "All Inspections"
-    ).classes("text-xl font-bold mt-6")
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem
 
 
+class SortableItem(QTableWidgetItem):
+    def __init__(self, label, value):
+        super().__init__(label)
+        self.sort_value = value
 
-    columns = [
-        {
-            "name": "id",
-            "label": "Inspection ID",
-            "field": "id",
-            "sortable": True,
-            "align": "left",
-        },
-        {
-            "name": "client_name",
-            "label": "Client",
-            "field": "client_name",
-            "sortable": True,
-        },
-        {
-            "name": "location",
-            "label": "Location",
-            "field": "location",
-            "sortable": True,
-        },
-        {
-            "name": "frequency",
-            "label": "Frequency",
-            "field": "frequency",
-            "sortable": True,
-        },
-        {
-            "name": "scheduled_date",
-            "label": "Scheduled",
-            "field": "scheduled_date",
-            "sortable": True,
-        },
-        {
-            "name": "performed_date",
-            "label": "Performed",
-            "field": "performed_date",
-            "sortable": True,
-        },
-        {
-            "name": "price",
-            "label": "Price",
-            "field": "price",
-            "sortable": True,
-        },
-    ]
+    def __lt__(self, other):
+        return self.sort_value < other.sort_value
 
-    rows = []
 
-    for inspection in inspections:
-
-        rows.append(
-            {
-                "id": inspection.id,
-                "client_name": inspection.client_name,
-                "location": inspection.location,
-                "frequency": inspection.frequency,
-                "scheduled_date": inspection.scheduled_date,
-                "performed_date": (
-                    inspection.performed_date
-                    if inspection.performed_date
-                    else "Not Completed"
-                ),
-                "price": f"${inspection.price:.2f}",
-            }
-        )
-
-    table = ui.table(
-        columns=columns,
-        rows=rows,
-        row_key="id",
-        pagination=10,
-    ).classes("inspection-table")
-
-    def handle_row_click(e):
-
-        row = e.args[1]
-
-        inspection_id = row["id"]
-
-        inspection = next(
-            inspection
-            for inspection in inspections
-            if inspection.id == inspection_id
-        )
-
-        show_inspection_details(inspection, read_only=True)
-
-    table.on(
-        "rowClick",
-        handle_row_click,
+def show_inspection_table(inspections, on_open):
+    table = QTableWidget(len(inspections), 7)
+    table.setHorizontalHeaderLabels([
+        "Inspection ID", "Client", "Location", "Frequency", "Scheduled", "Performed", "Price",
+    ])
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+    table.setMinimumHeight(300)
+    by_id = {inspection.id: inspection for inspection in inspections}
+    for row, inspection in enumerate(inspections):
+        values = [
+            (str(inspection.id), inspection.id),
+            (inspection.client_name, inspection.client_name.casefold()),
+            (inspection.location, inspection.location.casefold()),
+            (inspection.frequency, inspection.frequency),
+            (str(inspection.scheduled_date), inspection.scheduled_date.toordinal()),
+            (str(inspection.performed_date) if inspection.performed_date else "Not Completed",
+             inspection.performed_date.toordinal() if inspection.performed_date else 0),
+            (f"${inspection.price:.2f}", inspection.price),
+        ]
+        for column, (label, value) in enumerate(values):
+            item = SortableItem(label, value)
+            item.setData(Qt.ItemDataRole.UserRole, inspection.id)
+            table.setItem(row, column, item)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+    table.setSortingEnabled(True)
+    table.sortItems(0, Qt.SortOrder.AscendingOrder)
+    table.cellClicked.connect(
+        lambda row, column: on_open(by_id[table.item(row, column).data(Qt.ItemDataRole.UserRole)])
     )
+    return table

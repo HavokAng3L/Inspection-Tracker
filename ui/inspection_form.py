@@ -1,133 +1,55 @@
-from datetime import date, datetime
+from datetime import date
 
-from nicegui import ui
+from PySide6.QtCore import QDate
+from PySide6.QtWidgets import (
+    QComboBox, QDateEdit, QDoubleSpinBox, QFormLayout, QLineEdit, QTextEdit, QWidget,
+)
 
-from database import SessionLocal
-from inspection_service import create_inspection
 
+class InspectionForm(QWidget):
+    def __init__(self, inspection=None, parent=None):
+        super().__init__(parent)
+        layout = QFormLayout(self)
+        self.client_name = QLineEdit(inspection.client_name if inspection else "")
+        self.location = QLineEdit(inspection.location if inspection else "")
+        self.frequency = QComboBox()
+        self.frequency.addItems(["Annual", "Semi-Annual", "Quarterly"])
+        if inspection:
+            self.frequency.setCurrentText(inspection.frequency)
+        self.start_date = self.date_field(inspection.start_date if inspection else date.today())
+        self.scheduled_date = self.date_field(inspection.scheduled_date if inspection else date.today())
+        self.price = QDoubleSpinBox()
+        self.price.setRange(0, 999999999.99)
+        self.price.setDecimals(2)
+        self.price.setPrefix("$")
+        self.price.setValue(inspection.price if inspection else 0)
+        self.notes = QTextEdit((inspection.notes or "") if inspection else "")
+        self.notes.setMaximumHeight(120)
+        for label, widget in [
+            ("Client Name", self.client_name), ("Location", self.location),
+            ("Frequency", self.frequency), ("Start Date", self.start_date),
+            ("Scheduled Date", self.scheduled_date), ("Price", self.price),
+            ("Notes", self.notes),
+        ]:
+            layout.addRow(label, widget)
+        if inspection:
+            self.start_date.setEnabled(False)
 
-def show_add_inspection():
+    @staticmethod
+    def date_field(value):
+        field = QDateEdit(QDate(value.year, value.month, value.day))
+        field.setCalendarPopup(True)
+        field.setDisplayFormat("yyyy-MM-dd")
+        return field
 
-    with ui.dialog() as dialog, ui.card():
-
-        ui.label(
-            "Add New Inspection"
-        ).classes("text-2xl font-bold")
-
-        ui.separator()
-
-        ui.label("Client Name")
-
-        client_name_input = ui.input(
-            placeholder="Enter client name"
+    def values(self):
+        client = self.client_name.text().strip()
+        location = self.location.text().strip()
+        if not client or not location:
+            raise ValueError("Client name and location are required.")
+        return dict(
+            client_name=client, location=location,
+            frequency=self.frequency.currentText(),
+            scheduled_date=self.scheduled_date.date().toPython(),
+            price=self.price.value(), notes=self.notes.toPlainText().strip() or None,
         )
-
-        ui.label("Location")
-
-        location_input = ui.input(
-            placeholder="Enter location"
-        )
-
-        ui.label("Frequency")
-
-        frequency_input = ui.select(
-            [
-                "Annual",
-                "Semi-Annual",
-                "Quarterly",
-            ],
-            value="Annual",
-        )
-
-        ui.label("Start Date")
-
-        start_date_input = ui.date(
-            value=date.today()
-        )
-
-        ui.label("Scheduled Date")
-
-        scheduled_date_input = ui.date(
-            value=date.today()
-        )
-
-        ui.label("Price")
-
-        price_input = ui.number(
-            value=0,
-            format="%.2f",
-        )
-
-        ui.label("Notes")
-
-        notes_input = ui.textarea(
-            placeholder="Optional notes"
-        )
-
-        ui.separator()
-
-        def handle_create():
-
-            if not client_name_input.value:
-
-                ui.notify(
-                    "Client name is required",
-                    type="negative",
-                )
-
-                return
-
-            if not location_input.value:
-
-                ui.notify(
-                    "Location is required",
-                    type="negative",
-                )
-
-                return
-
-            start_date = datetime.strptime(
-                start_date_input.value,
-                "%Y-%m-%d",
-            ).date()
-
-            scheduled_date = datetime.strptime(
-                scheduled_date_input.value,
-                "%Y-%m-%d",
-            ).date()
-
-            with SessionLocal() as session:
-
-                create_inspection(
-                    session=session,
-                    client_name=client_name_input.value,
-                    location=location_input.value,
-                    frequency=frequency_input.value,
-                    start_date=start_date,
-                    scheduled_date=scheduled_date,
-                    price=price_input.value,
-                    notes=notes_input.value or None,
-                )
-
-            dialog.close()
-
-            from ui.dashboard import dashboard
-            dashboard.refresh()
-
-            ui.notify(
-                "Inspection Added"
-            )
-
-        with ui.row():
-
-            ui.button(
-                "Add Inspection",
-                on_click=handle_create,
-            )
-
-            ui.button(
-                "Cancel",
-                on_click=dialog.close,
-            )
-
-    dialog.open()

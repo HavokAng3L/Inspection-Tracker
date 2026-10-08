@@ -1,34 +1,17 @@
-from nicegui import ui
-
-from ui.inspection_dialog import show_inspection_details
+from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton, QVBoxLayout
 
 
-def show_inspection_section(title, inspections):
-
-    ui.label(
-        title
-    ).classes("text-xl font-bold mt-6")
-
+def show_inspection_section(title, inspections, on_open):
+    section = QGroupBox(title)
+    layout = QVBoxLayout(section)
     for inspection in inspections:
-
-        with ui.card().on(
-            "click",
-            lambda inspection=inspection:
-                show_inspection_details(inspection),
-        ):
-
-            ui.label(
-                inspection.client_name
-            ).classes("text-lg font-bold")
-
-            ui.label(
-                f"Location: {inspection.location}"
-            )
-
-            ui.label(
-                f"Scheduled: {inspection.scheduled_date}"
-            )
-
-            ui.label(
-                f"Price: ${inspection.price:.2f}"
-            )
+        card = QPushButton(
+            f"{inspection.client_name}\nLocation: {inspection.location}\n"
+            f"Scheduled: {inspection.scheduled_date}\nPrice: ${inspection.price:.2f}"
+        )
+        card.setObjectName("inspectionCard")
+        card.clicked.connect(lambda checked=False, item=inspection: on_open(item))
+        layout.addWidget(card)
+    if not inspections:
+        layout.addWidget(QLabel("No inspections in this period."))
+    return section

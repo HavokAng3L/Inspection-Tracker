@@ -1,257 +1,82 @@
+import logging
 from datetime import date
 
-from nicegui import ui
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
+from sqlalchemy.exc import SQLAlchemyError
 
 from database import SessionLocal
+from inspection_service import create_inspection, update_inspection, complete_inspection, delete_inspection
 from models import Inspection
-
-from inspection_service import (
-    complete_inspection,
-    update_inspection,
-    delete_inspection,
-)
+from ui.inspection_form import InspectionForm
 
 
-def show_inspection_details(inspection, read_only=False):
+def show_database_error(parent, error):
+    logging.exception("Database operation failed")
+    message = "The database operation failed. See the application log for details."
+    if "locked" in str(error).lower() or "busy" in str(error).lower():
+        message = "The database is busy. Close other apps using this database and try again."
+    QMessageBox.warning(parent, "Database error", message)
 
-    with ui.dialog() as dialog, ui.card():
 
-        ui.label(
-            inspection.client_name
-        ).classes("text-2xl font-bold")
-
-        ui.separator()
-
-        ui.label("Client Name")
-
-        client_name_input = ui.input(
-            value=inspection.client_name
-        )
-
-        ui.label("Location")
-
-        location_input = ui.input(
-            value=inspection.location
-        )
-
-        ui.label("Frequency")
-
-        frequency_input = ui.select(
-            [
-                "Annual",
-                "Semi-Annual",
-                "Quarterly",
-            ],
-            value=inspection.frequency,
-        )
-
-        ui.label("Scheduled Date")
-
-        scheduled_date_input = ui.date(
-            value=inspection.scheduled_date
-        )
-
-        ui.label("Price")
-
-        price_input = ui.number(
-            value=inspection.price,
-            format="%.2f",
-        )
-
-        ui.label("Notes")
-
-        notes_input = ui.textarea(
-            value=inspection.notes or ""
-        )
-
-        # ---------------------------------------------------------
-        # Read-only mode
-        # ---------------------------------------------------------
-
+class InspectionDialog(QDialog):
+    def __init__(self, inspection=None, read_only=False, parent=None):
+        super().__init__(parent)
+        self.inspection_id = inspection.id if inspection else None
+        self.setWindowTitle(inspection.client_name if inspection else "Add New Inspection")
+        self.setMinimumWidth(480)
+        layout = QVBoxLayout(self)
+        self.form = InspectionForm(inspection)
+        layout.addWidget(self.form)
+        if inspection and inspection.performed_date:
+            layout.addWidget(QLabel(f"Performed: {inspection.performed_date}"))
+        buttons = QHBoxLayout()
+        layout.addLayout(buttons)
         if read_only:
-
-            client_name_input.disable()
-            location_input.disable()
-            frequency_input.disable()
-            scheduled_date_input.disable()
-            price_input.disable()
-            notes_input.disable()
-
-            ui.separator()
-
-            ui.button(
-                "Close",
-                on_click=dialog.close,
-            )
-
-        # ---------------------------------------------------------
-        # Editable mode
-        # ---------------------------------------------------------
-
+            self.form.setEnabled(False)
         else:
+            save = QPushButton("Apply Changes" if inspection else "Add Inspection")
+            save.clicked.connect(lambda: self.perform("save"))
+            buttons.addWidget(save)
+            if inspection:
+                complete = QPushButton("Complete Inspection")
+                complete.setEnabled(inspection.performed_date is None)
+                complete.clicked.connect(lambda: self.perform("complete"))
+                buttons.addWidget(complete)
+                delete = QPushButton("Delete Inspection")
+                delete.clicked.connect(lambda: self.perform("delete"))
+                buttons.addWidget(delete)
+        close = QPushButton("Close" if read_only else "Cancel")
+        close.clicked.connect(self.reject)
+        buttons.addWidget(close)
 
-            ui.separator()
-
-            def handle_complete():
-
-                complete_button.disable()
-
-                with SessionLocal() as session:
-
-                    inspection_db = session.get(
-                        Inspection,
-                        inspection.id,
-                    )
-
-                    if inspection_db is None:
-
-                        ui.notify(
-                            "Inspection not found",
-                            type="negative",
-                        )
-
-                        complete_button.enable()
-
-                        return
-
-                    complete_inspection(
-                        session=session,
-                        inspection=inspection_db,
-                        performed_date=date.today(),
-                    )
-
-                dialog.close()
-
-                from ui.dashboard import dashboard
-                dashboard.refresh()
-
-                ui.notify(
-                    "Inspection Completed"
-                )
-
-            def handle_save():
-
-                with SessionLocal() as session:
-
-                    inspection_db = session.get(
-                        Inspection,
-                        inspection.id,
-                    )
-
-                    if inspection_db is None:
-
-                        ui.notify(
-                            "Inspection not found",
-                            type="negative",
-                        )
-
-                        return
-
-                    update_inspection(
-                        session=session,
-                        inspection=inspection_db,
-                        client_name=client_name_input.value,
-                        location=location_input.value,
-                        frequency=frequency_input.value,
-                        scheduled_date=scheduled_date_input.value,
-                        price=price_input.value,
-                        notes=notes_input.value or None,
-                    )
-
-                dialog.close()
-
-                from ui.dashboard import dashboard
-                dashboard.refresh()
-
-                ui.notify(
-                    "Inspection Updated"
-                )
-
-            def handle_delete():
-
-                with ui.dialog() as confirm_dialog, ui.card():
-
-                    ui.label(
-                        "Delete this inspection?"
-                    ).classes("text-xl font-bold")
-
-                    ui.label(
-                        "This cannot be undone."
-                    )
-
-                    with ui.row():
-
-                        def confirm_delete():
-
-                            with SessionLocal() as session:
-
-                                inspection_db = session.get(
-                                    Inspection,
-                                    inspection.id,
-                                )
-
-                                if inspection_db is None:
-
-                                    ui.notify(
-                                        "Inspection not found",
-                                        type="negative",
-                                    )
-
-                                    confirm_dialog.close()
-
-                                    return
-
-                                delete_inspection(
-                                    session=session,
-                                    inspection=inspection_db,
-                                )
-
-                            confirm_dialog.close()
-                            dialog.close()
-
-                            from ui.dashboard import dashboard
-                            dashboard.refresh()
-
-                            ui.notify(
-                                "Inspection Deleted"
-                            )
-
-                        ui.button(
-                            "Delete",
-                            on_click=confirm_delete,
-                        )
-
-                        ui.button(
-                            "Cancel",
-                            on_click=confirm_dialog.close,
-                        )
-
-                confirm_dialog.open()
-
-            with ui.row():
-
-                complete_button = ui.button(
-                    "Complete Inspection",
-                    on_click=handle_complete,
-                ).props(
-                    "color=positive"
-                ).classes(
-                    "font-bold"
-                )
-
-                ui.button(
-                    "Apply Changes",
-                    on_click=handle_save,
-                )
-
-                ui.button(
-                    "Cancel",
-                    on_click=dialog.close,
-                )
-
-                ui.button(
-                    "Delete Inspection",
-                    on_click=handle_delete,
-                )
-
-    dialog.open()
+    def perform(self, action):
+        if action == "delete" and QMessageBox.question(
+            self, "Delete inspection", "Delete this inspection? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            values = self.form.values() if action == "save" else None
+            with SessionLocal() as session:
+                if self.inspection_id is None:
+                    create_inspection(session, start_date=self.form.start_date.date().toPython(), **values)
+                else:
+                    inspection = session.get(Inspection, self.inspection_id)
+                    if inspection is None:
+                        raise ValueError("Inspection not found. Refresh the dashboard.")
+                    if action == "save":
+                        update_inspection(session, inspection, **values)
+                    elif action == "complete":
+                        if inspection.performed_date is not None:
+                            raise ValueError("This inspection has already been completed.")
+                        complete_inspection(session, inspection, date.today())
+                    elif action == "delete":
+                        delete_inspection(session, inspection)
+        except ValueError as error:
+            QMessageBox.warning(self, "Check inspection", str(error))
+            return
+        except SQLAlchemyError as error:
+            show_database_error(self, error)
+            return
+        self.accept()
